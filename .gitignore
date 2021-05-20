@@ -1,0 +1,4 @@
+*.bak
+*.swp
+*.pyc
+remote_run
