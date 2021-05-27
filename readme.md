@@ -29,6 +29,12 @@ python3 main.py gcn cora
   * inductive setting: gcn2mlp / linkdist-nomp / gcn / linkdist
 * available datasets: cora / citeseer / pubmed / corafull / amazon-photo / amazon-com / coauthor-cs / coauthor-phy
 
+To reproduce all experiments in our paper, run
+
+```bash
+bash run >> run.log
+```
+
 ## Citation
 
 ```bibtex

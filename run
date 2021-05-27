@@ -1,0 +1,18 @@
+#!/bin/bash -
+
+for dataset in cora citeseer pubmed corafull amazon-photo amazon-com coauthor-cs coauthor-phy; do
+    for method in mlp-trans gcn-trans2mlp linkdist-trans-nomp gcn-trans linkdist-trans; do
+        while true; do
+            python3 main.pyc $method $dataset 0 && break
+            sleep 600
+        done
+    done
+done
+for dataset in cora citeseer pubmed corafull amazon-photo amazon-com coauthor-cs coauthor-phy; do
+    for method in mlp gcn2mlp linkdist-nomp gcn linkdist; do
+        while true; do
+            python3 main.pyc $method $dataset 0 && break
+            sleep 600
+        done
+    done
+done

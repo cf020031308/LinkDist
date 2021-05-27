@@ -250,7 +250,7 @@ for run in range(10):
         if 'linkdist' in g_method:
             A = spnorm(graph.adj())
     evaluate.start_run()
-    if g_method in ('mlp', 'ann'):
+    if g_method in ('mlp', 'mlp-trans'):
         mlp = MLP(n_features, hid, n_labels)
         opt = optimize([*mlp.parameters()])
         for epoch in range(1, 1 + epochs):
@@ -398,23 +398,22 @@ for run in range(10):
             params = []
             for X, Y, src, dst, n, e, d, c, A in graphs['train']:
                 alpha = 0
-                label_ndist = F.normalize(Y.sum(dim=0), p=1, dim=0)
-                label_edist = F.normalize(
-                    (Y[src] + Y[dst]).sum(dim=0), p=1, dim=0)
-                weight = label_ndist / label_edist
+                label_ndist = Y.sum(dim=0)
+                label_edist = (Y[src] + Y[dst]).sum(dim=0)
+                weight = c * F.normalize(
+                    label_ndist / label_edist, p=1, dim=0)
                 params.append((alpha, weight))
         else:
             alpha = 1 - ((
                 train_mask[src].sum() + train_mask[dst].sum()
             ) / (2 * n_edges)).item()
-            label_ndist = F.normalize(
-                Y[torch.arange(n_nodes)[train_mask]
-                  ].float().histc(n_labels), p=1, dim=0)
-            label_edist = F.normalize(
+            label_ndist = Y[
+                torch.arange(n_nodes)[train_mask]].float().histc(n_labels)
+            label_edist = (
                 Y[src[train_mask[src]]].float().histc(n_labels)
-                + Y[dst[train_mask[dst]]].float().histc(n_labels),
-                p=1, dim=0)
-            weight = label_ndist / label_edist
+                + Y[dst[train_mask[dst]]].float().histc(n_labels))
+            weight = n_labels * F.normalize(
+                label_ndist / label_edist, p=1, dim=0)
         for epoch in range(1, 2 + int(epochs // degree)):
             linkdist.train()
             if g_data == 'ppi':
