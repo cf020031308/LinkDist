@@ -389,7 +389,7 @@ for run in range(10):
                     mlp.eval()
                     evaluate(mlp(X))
     elif g_method.startswith('linkdist'):
-        linkdist = LinkDist(n_features, hid, n_labels, n_layers=3)
+        linkdist = LinkDist(n_features, hid, n_labels, n_layers=2)
         opt = optimize([*linkdist.parameters()])
         if '-trans' in g_method:
             src, dst = graph.edges()
@@ -404,9 +404,14 @@ for run in range(10):
                     label_ndist / label_edist, p=1, dim=0)
                 params.append((alpha, weight))
         else:
-            alpha = 1 - ((
+            # 点中训练节点比例
+            train_nprob = train_mask.sum().item() / n_nodes
+            # 边中训练节点比例
+            train_eprob = ((
                 train_mask[src].sum() + train_mask[dst].sum()
             ) / (2 * n_edges)).item()
+            # 边中未知节点比例
+            alpha = 1 - train_eprob
             label_ndist = Y[
                 torch.arange(n_nodes)[train_mask]].float().histc(n_labels)
             label_edist = (
@@ -452,26 +457,50 @@ for run in range(10):
                         rets.append(ret)
                     evaluate.evppi(rets)
             else:
+                idx = torch.randint(0, n_nodes, (n_edges, ))
+                smax = lambda x: torch.softmax(x, dim=-1)
                 for perm in DataLoader(
                         range(n_edges), batch_size=batch_size, shuffle=True):
                     opt.zero_grad()
+                    pidx = idx[perm]
                     psrc = src[perm]
                     pdst = dst[perm]
+                    y, z = linkdist(X[pidx])
                     y1, z1 = linkdist(X[psrc])
                     y2, z2 = linkdist(X[pdst])
-                    loss = alpha * (F.mse_loss(y1, z2) + F.mse_loss(y2, z1))
+                    loss = alpha * (
+                        F.mse_loss(y1, z2) + F.mse_loss(y2, z1)
+                        - 0.5 * (
+                            F.mse_loss(smax(y1), smax(z))
+                            + F.mse_loss(smax(y2), smax(z))
+                            + F.mse_loss(smax(y), smax(z1))
+                            + F.mse_loss(smax(y), smax(z2))
+                        )
+                    )
                     m = train_mask[psrc]
                     if m.any().item():
                         target = Y[psrc][m]
                         loss = loss + (
                             F.cross_entropy(y1[m], target, weight=weight)
-                            + F.cross_entropy(z2[m], target, weight=weight))
+                            + F.cross_entropy(z2[m], target, weight=weight)
+                            - train_nprob * F.cross_entropy(
+                                z[m], target, weight=weight))
                     m = train_mask[pdst]
                     if m.any().item():
                         target = Y[pdst][m]
                         loss = loss + (
                             F.cross_entropy(y2[m], target, weight=weight)
-                            + F.cross_entropy(z1[m], target, weight=weight))
+                            + F.cross_entropy(z1[m], target, weight=weight)
+                            - train_nprob * F.cross_entropy(
+                                z[m], target, weight=weight))
+                    m = train_mask[pidx]
+                    if m.any().item():
+                        target = Y[pidx][m]
+                        loss = loss + (
+                            2 * F.cross_entropy(y[m], target)
+                            - train_eprob * (
+                                F.cross_entropy(z1[m], target)
+                                + F.cross_entropy(z2[m], target)))
                     loss.backward()
                     opt.step()
                 with torch.no_grad():
