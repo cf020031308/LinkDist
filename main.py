@@ -11,15 +11,18 @@ import dgl
 
 
 if len(sys.argv) > 2:
-    g_method, g_data, *gcard = sys.argv[1:]
+    g_method, g_data, g_split, *gcard = sys.argv[1:]
     gcard.append('0')
 else:
     g_method = 'lpa'
     g_data = 'cora'
+    g_split = '0'
     gcard = [0]
+g_split = float(g_split)
 epochs = 200
 batch_size = 1024
 hid = 256
+n_layers = 3
 
 gcard = int(gcard[0])
 gpu = lambda x: x
@@ -200,11 +203,21 @@ class Stat(object):
         print('acc:%.2f±%.2f' % (acc.mean().item(), acc.std().item()))
 
 
-evaluate = Stat(name='data: %s, method: %s' % (g_data, g_method))
+evaluate = Stat(
+    name='data: %s, method: %s, split: %d' % (g_data, g_method, 10 * g_split))
 for run in range(10):
     torch.manual_seed(run)
     if g_data != 'ppi':
-        if 'train_mask' in graph.ndata:
+        if g_split:
+            train_mask = torch.zeros(n_nodes, dtype=bool)
+            valid_mask = torch.zeros(n_nodes, dtype=bool)
+            test_mask = torch.zeros(n_nodes, dtype=bool)
+            idx = torch.randperm(n_nodes)
+            val_num = test_num = int(n_nodes * (1 - 0.1 * g_split) / 2)
+            train_mask[idx[val_num + test_num:]] = True
+            valid_mask[idx[:val_num]] = True
+            test_mask[idx[val_num:val_num + test_num]] = True
+        elif 'train_mask' in graph.ndata:
             train_mask = graph.ndata['train_mask']
             valid_mask = graph.ndata['val_mask']
             test_mask = graph.ndata['test_mask']
@@ -251,7 +264,7 @@ for run in range(10):
             A = spnorm(graph.adj())
     evaluate.start_run()
     if g_method in ('mlp', 'mlp-trans'):
-        mlp = MLP(n_features, hid, n_labels)
+        mlp = MLP(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*mlp.parameters()])
         for epoch in range(1, 1 + epochs):
             mlp.train()
@@ -282,7 +295,7 @@ for run in range(10):
                     mlp.eval()
                     evaluate(mlp(X))
     elif g_method in ('gcn', 'gcn-trans'):
-        gcn = GCN(n_features, hid, n_labels)
+        gcn = GCN(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*gcn.parameters()])
         for epoch in range(1, 1 + epochs):
             gcn.train()
@@ -311,8 +324,8 @@ for run in range(10):
                     gcn.eval()
                     gcn.A = A[1]
                     evaluate(gcn(X))
-    elif g_method in ('gcn2mlp', 'gcn-trans2mlp'):
-        gcn = GCN(n_features, hid, n_labels)
+    elif g_method in ('gcn2mlp', 'gcn2mlp-trans'):
+        gcn = GCN(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*gcn.parameters()])
         best_acc = 0
         ev2 = Stat()
@@ -355,7 +368,7 @@ for run in range(10):
                 if acc > best_acc:
                     best_acc = acc
                     probs = torch.softmax(logits.detach(), dim=-1)
-        mlp = MLP(n_features, hid, n_labels)
+        mlp = MLP(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*mlp.parameters()])
         for epoch in range(1, 1 + epochs):
             mlp.train()
@@ -388,8 +401,8 @@ for run in range(10):
                 with torch.no_grad():
                     mlp.eval()
                     evaluate(mlp(X))
-    elif g_method.startswith('linkdist'):
-        linkdist = LinkDist(n_features, hid, n_labels, n_layers=2)
+    elif 'linkdist' in g_method:
+        linkdist = LinkDist(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*linkdist.parameters()])
         if '-trans' in g_method:
             src, dst = graph.edges()
@@ -419,7 +432,7 @@ for run in range(10):
                 + Y[dst[train_mask[dst]]].float().histc(n_labels))
             weight = n_labels * F.normalize(
                 label_ndist / label_edist, p=1, dim=0)
-        for epoch in range(1, 2 + int(epochs // degree)):
+        for epoch in range(1, 1 + int(epochs // degree)):
             linkdist.train()
             if g_data == 'ppi':
                 for (X, Y, src, dst, n, e, d, c, A), (alpha, weight) in zip(
@@ -450,13 +463,17 @@ for run in range(10):
                         ret = []
                         for X, Y, src, dst, n, e, d, c, A in graphs[mode]:
                             Z, S = linkdist(X)
-                            if '-nomp' in g_method:
+                            if 'mlp' in g_method:
                                 ret.append((Z, Y))
                             else:
                                 ret.append((Z + alpha * (A @ S), Y))
                         rets.append(ret)
                     evaluate.evppi(rets)
-            else:
+                continue
+            if g_method.startswith('colinkdist'):
+                beta = 0.33
+                beta1 = beta * train_nprob / (train_nprob + train_eprob)
+                beta2 = beta - beta1
                 idx = torch.randint(0, n_nodes, (n_edges, ))
                 smax = lambda x: torch.softmax(x, dim=-1)
                 for perm in DataLoader(
@@ -483,7 +500,7 @@ for run in range(10):
                         loss = loss + (
                             F.cross_entropy(y1[m], target, weight=weight)
                             + F.cross_entropy(z2[m], target, weight=weight)
-                            - train_nprob * F.cross_entropy(
+                            - beta1 * F.cross_entropy(
                                 z[m], target, weight=weight))
                     m = train_mask[pdst]
                     if m.any().item():
@@ -491,27 +508,50 @@ for run in range(10):
                         loss = loss + (
                             F.cross_entropy(y2[m], target, weight=weight)
                             + F.cross_entropy(z1[m], target, weight=weight)
-                            - train_nprob * F.cross_entropy(
+                            - beta1 * F.cross_entropy(
                                 z[m], target, weight=weight))
                     m = train_mask[pidx]
                     if m.any().item():
                         target = Y[pidx][m]
                         loss = loss + (
                             2 * F.cross_entropy(y[m], target)
-                            - train_eprob * (
+                            - beta2 * (
                                 F.cross_entropy(z1[m], target)
                                 + F.cross_entropy(z2[m], target)))
                     loss.backward()
                     opt.step()
-                with torch.no_grad():
-                    linkdist.eval()
-                    Z, S = linkdist(X)
-                    if '-nomp' in g_method:
-                        evaluate(Z)
-                    else:
-                        evaluate(
-                            F.log_softmax(Z, dim=-1)
-                            + alpha * (A @ F.log_softmax(S, dim=-1)))
+            else:
+                for perm in DataLoader(
+                        range(n_edges), batch_size=batch_size, shuffle=True):
+                    opt.zero_grad()
+                    psrc = src[perm]
+                    pdst = dst[perm]
+                    y1, z1 = linkdist(X[psrc])
+                    y2, z2 = linkdist(X[pdst])
+                    loss = alpha * (F.mse_loss(y1, z2) + F.mse_loss(y2, z1))
+                    m = train_mask[psrc]
+                    if m.any().item():
+                        target = Y[psrc][m]
+                        loss = loss + (
+                            F.cross_entropy(y1[m], target, weight=weight)
+                            + F.cross_entropy(z2[m], target, weight=weight))
+                    m = train_mask[pdst]
+                    if m.any().item():
+                        target = Y[pdst][m]
+                        loss = loss + (
+                            F.cross_entropy(y2[m], target, weight=weight)
+                            + F.cross_entropy(z1[m], target, weight=weight))
+                    loss.backward()
+                    opt.step()
+            with torch.no_grad():
+                linkdist.eval()
+                Z, S = linkdist(X)
+                if 'mlp' in g_method:
+                    evaluate(Z)
+                else:
+                    evaluate(
+                        F.log_softmax(Z, dim=-1)
+                        + alpha * (A @ F.log_softmax(S, dim=-1)))
     else:
         # Label Propagation
         alpha = 0.4
