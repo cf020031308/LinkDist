@@ -471,9 +471,13 @@ for run in range(10):
                     evaluate.evppi(rets)
                 continue
             if g_method.startswith('colinkdist'):
-                beta = 0.33
-                beta1 = beta * train_nprob / (train_nprob + train_eprob)
-                beta2 = beta - beta1
+                if g_split:
+                    beta = 0.1
+                    beta1 = beta * train_nprob / (train_nprob + train_eprob)
+                    beta2 = beta - beta1
+                else:
+                    beta1 = train_nprob
+                    beta2 = train_eprob
                 idx = torch.randint(0, n_nodes, (n_edges, ))
                 smax = lambda x: torch.softmax(x, dim=-1)
                 for perm in DataLoader(

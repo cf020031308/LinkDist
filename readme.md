@@ -41,8 +41,10 @@ python3 main.py colinkdistmlp-trans amazon-photo 6
 To reproduce all experiments in our paper, run
 
 ```bash
-bash run >> run.log
+bash run
 ```
+
+The output logs will be saved into `trans.log`, `induc.log`, and `full.log`.
 
 ## Citation
 
