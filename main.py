@@ -1,6 +1,5 @@
 import sys
 import time
-from collections import defaultdict
 
 import numpy
 import torch
@@ -91,66 +90,36 @@ class LinkDist(nn.Module):
         return self.out(x), self.inf(x)
 
 
-if g_data == 'ppi':
-    graphs = {}
-    stat = defaultdict(lambda: 0)
-    modes = ('train', 'valid', 'test')
-    for mode in modes:
-        graphs[mode] = []
-        for graph in dgl.data.PPIDataset(mode=mode):
-            X = node_features = gpu(graph.ndata['feat'])
-            Y = node_labels = gpu(graph.ndata['label'])
-            src, dst = graph.edges()
-            n_nodes = node_features.shape[0]
-            n_edges = src.shape[0]
-            n_features = node_features.shape[1]
-            n_labels = node_labels.shape[1]
-            if 'linkdist' in g_method:
-                A = spnorm(graph.adj())
-            else:
-                A = spnorm(graph.adj() + speye(n_nodes), eps=0)
-            graphs[mode].append((
-                X, Y, src, dst, n_nodes, n_edges, n_features, n_labels, A))
-            stat['nodes'] += n_nodes
-            stat['edges'] += (n_edges - (src == dst).sum().item())
-            is_bidir = ((dst == src[0]) & (src == dst[0])).any().item()
-    print('nodes: %d' % stat['nodes'])
-    print('features: %d' % n_features)
-    print('classes: %d' % n_labels)
-    print('edges: %d' % (stat['edges'] / (1 + is_bidir)))
-    degree = stat['edges'] * (2 - is_bidir) / stat['nodes']
-    print('degree: %.2f' % degree)
-else:
-    graph = (
-        dgl.data.CoraGraphDataset() if g_data == 'cora'
-        else dgl.data.CiteseerGraphDataset() if g_data == 'citeseer'
-        else dgl.data.PubmedGraphDataset() if g_data == 'pubmed'
-        else dgl.data.CoraFullDataset() if g_data == 'corafull'
-        else dgl.data.CoauthorCSDataset() if g_data == 'coauthor-cs'
-        else dgl.data.CoauthorPhysicsDataset() if g_data == 'coauthor-phy'
-        else dgl.data.RedditDataset() if g_data == 'reddit'
-        else dgl.data.AmazonCoBuyComputerDataset()
-        if g_data == 'amazon-com'
-        else dgl.data.AmazonCoBuyPhotoDataset() if g_data == 'amazon-photo'
-        else None
-    )[0]
-    X = node_features = gpu(graph.ndata['feat'])
-    Y = node_labels = gpu(graph.ndata['label'])
-    n_nodes = node_features.shape[0]
-    nrange = torch.arange(n_nodes)
-    n_features = node_features.shape[1]
-    n_labels = int(Y.max().item() + 1)
-    src, dst = graph.edges()
-    n_edges = src.shape[0]
-    is_bidir = ((dst == src[0]) & (src == dst[0])).any().item()
-    print('BiDirection: %s' % is_bidir)
-    print('nodes: %d' % n_nodes)
-    print('features: %d' % n_features)
-    print('classes: %d' % n_labels)
-    print('edges: %d' % (
-        (n_edges - (src == dst).sum().item()) / (1 + is_bidir)))
-    degree = n_edges * (2 - is_bidir) / n_nodes
-    print('degree: %.2f' % degree)
+graph = (
+    dgl.data.CoraGraphDataset() if g_data == 'cora'
+    else dgl.data.CiteseerGraphDataset() if g_data == 'citeseer'
+    else dgl.data.PubmedGraphDataset() if g_data == 'pubmed'
+    else dgl.data.CoraFullDataset() if g_data == 'corafull'
+    else dgl.data.CoauthorCSDataset() if g_data == 'coauthor-cs'
+    else dgl.data.CoauthorPhysicsDataset() if g_data == 'coauthor-phy'
+    else dgl.data.RedditDataset() if g_data == 'reddit'
+    else dgl.data.AmazonCoBuyComputerDataset()
+    if g_data == 'amazon-com'
+    else dgl.data.AmazonCoBuyPhotoDataset() if g_data == 'amazon-photo'
+    else None
+)[0]
+X = node_features = gpu(graph.ndata['feat'])
+Y = node_labels = gpu(graph.ndata['label'])
+n_nodes = node_features.shape[0]
+nrange = torch.arange(n_nodes)
+n_features = node_features.shape[1]
+n_labels = int(Y.max().item() + 1)
+src, dst = graph.edges()
+n_edges = src.shape[0]
+is_bidir = ((dst == src[0]) & (src == dst[0])).any().item()
+print('BiDirection: %s' % is_bidir)
+print('nodes: %d' % n_nodes)
+print('features: %d' % n_features)
+print('classes: %d' % n_labels)
+print('edges: %d' % (
+    (n_edges - (src == dst).sum().item()) / (1 + is_bidir)))
+degree = n_edges * (2 - is_bidir) / n_nodes
+print('degree: %.2f' % degree)
 
 
 class Stat(object):
@@ -167,17 +136,6 @@ class Stat(object):
              / gpu(mask).sum().float()).item()
             for mask in (train_mask, valid_mask, test_mask)
         ])
-        self.times.append(time.time() - self.tick)
-        return self.accs[-1][0]
-
-    def evppi(self, rets):
-        self.accs.append([
-            torch.cat([
-                ((torch.sigmoid(logits) > 0.5) == Y.bool())
-                .float().mean(dim=1)
-                for logits, Y in ret
-            ], dim=0).mean()
-            for ret in rets])
         self.times.append(time.time() - self.tick)
         return self.accs[-1][0]
 
@@ -208,128 +166,92 @@ evaluate = Stat(
     name='data: %s, method: %s, split: %d' % (g_data, g_method, 10 * g_split))
 for run in range(10):
     torch.manual_seed(run)
-    if g_data != 'ppi':
-        if g_split == 6 and '-full' in g_method:
-            split = numpy.load('data/%s_split_0.6_0.2_%d.npz' % (g_data, run))
-            train_mask = torch.from_numpy(split['train_mask']).bool()
-            valid_mask = torch.from_numpy(split['val_mask']).bool()
-            test_mask = torch.from_numpy(split['test_mask']).bool()
-        elif g_split:
-            train_mask = torch.zeros(n_nodes, dtype=bool)
-            valid_mask = torch.zeros(n_nodes, dtype=bool)
-            test_mask = torch.zeros(n_nodes, dtype=bool)
-            idx = torch.randperm(n_nodes)
-            val_num = test_num = int(n_nodes * (1 - 0.1 * g_split) / 2)
-            train_mask[idx[val_num + test_num:]] = True
-            valid_mask[idx[:val_num]] = True
-            test_mask[idx[val_num:val_num + test_num]] = True
-        elif 'train_mask' in graph.ndata:
-            train_mask = graph.ndata['train_mask']
-            valid_mask = graph.ndata['val_mask']
-            test_mask = graph.ndata['test_mask']
-        else:
-            # split dataset like Cora, Citeseer and Pubmed
-            train_mask = torch.zeros(n_nodes, dtype=bool)
-            for y in range(n_labels):
-                label_mask = (graph.ndata['label'] == y)
-                train_mask[
-                    nrange[label_mask][torch.randperm(label_mask.sum())[:20]]
-                ] = True
-            print(node_labels[train_mask].float().histc(n_labels))
-            valid_mask = ~train_mask
-            valid_mask[
-                nrange[valid_mask][torch.randperm(valid_mask.sum())[500:]]
-            ] = False
-            test_mask = ~(train_mask | valid_mask)
-            test_mask[
-                nrange[test_mask][torch.randperm(test_mask.sum())[1000:]]
-            ] = False
-            print(train_mask.sum(), valid_mask.sum(), test_mask.sum())
-        train_idx = nrange[train_mask]
-        known_idx = nrange[~(valid_mask | test_mask)]
-        E = speye(n_nodes)
-        if '-trans' in g_method:
-            A = [spnorm(graph.adj() + E, eps=0)] * 2
-        else:
-            # Inductive Settings
-            src, dst = graph.edges()
-            flt = ~(
-                valid_mask[src] | test_mask[src]
-                | valid_mask[dst] | test_mask[dst])
-            src = src[flt]
-            dst = dst[flt]
-            n_edges = src.shape[0]
-            A = torch.sparse_coo_tensor(
-                torch.cat((
-                    torch.cat((src, dst), dim=0).unsqueeze(0),
-                    torch.cat((dst, src), dim=0).unsqueeze(0)), dim=0),
-                values=torch.ones(2 * n_edges),
-                size=(n_nodes, n_nodes))
-            A = (spnorm(A + E), spnorm(graph.adj() + E, eps=0))
-        if 'linkdist' in g_method:
-            A = spnorm(graph.adj())
+    if g_split == 6 and '-full' in g_method:
+        split = numpy.load('data/%s_split_0.6_0.2_%d.npz' % (g_data, run))
+        train_mask = torch.from_numpy(split['train_mask']).bool()
+        valid_mask = torch.from_numpy(split['val_mask']).bool()
+        test_mask = torch.from_numpy(split['test_mask']).bool()
+    elif g_split:
+        train_mask = torch.zeros(n_nodes, dtype=bool)
+        valid_mask = torch.zeros(n_nodes, dtype=bool)
+        test_mask = torch.zeros(n_nodes, dtype=bool)
+        idx = torch.randperm(n_nodes)
+        val_num = test_num = int(n_nodes * (1 - 0.1 * g_split) / 2)
+        train_mask[idx[val_num + test_num:]] = True
+        valid_mask[idx[:val_num]] = True
+        test_mask[idx[val_num:val_num + test_num]] = True
+    elif 'train_mask' in graph.ndata:
+        train_mask = graph.ndata['train_mask']
+        valid_mask = graph.ndata['val_mask']
+        test_mask = graph.ndata['test_mask']
+    else:
+        # split dataset like Cora, Citeseer and Pubmed
+        train_mask = torch.zeros(n_nodes, dtype=bool)
+        for y in range(n_labels):
+            label_mask = (graph.ndata['label'] == y)
+            train_mask[
+                nrange[label_mask][torch.randperm(label_mask.sum())[:20]]
+            ] = True
+        print(node_labels[train_mask].float().histc(n_labels))
+        valid_mask = ~train_mask
+        valid_mask[
+            nrange[valid_mask][torch.randperm(valid_mask.sum())[500:]]
+        ] = False
+        test_mask = ~(train_mask | valid_mask)
+        test_mask[
+            nrange[test_mask][torch.randperm(test_mask.sum())[1000:]]
+        ] = False
+        print(train_mask.sum(), valid_mask.sum(), test_mask.sum())
+    train_idx = nrange[train_mask]
+    known_idx = nrange[~(valid_mask | test_mask)]
+    E = speye(n_nodes)
+    if '-trans' in g_method:
+        A = [spnorm(graph.adj() + E, eps=0)] * 2
+    else:
+        # Inductive Settings
+        src, dst = graph.edges()
+        flt = ~(
+            valid_mask[src] | test_mask[src]
+            | valid_mask[dst] | test_mask[dst])
+        src = src[flt]
+        dst = dst[flt]
+        n_edges = src.shape[0]
+        A = torch.sparse_coo_tensor(
+            torch.cat((
+                torch.cat((src, dst), dim=0).unsqueeze(0),
+                torch.cat((dst, src), dim=0).unsqueeze(0)), dim=0),
+            values=torch.ones(2 * n_edges),
+            size=(n_nodes, n_nodes))
+        A = (spnorm(A + E), spnorm(graph.adj() + E, eps=0))
+    if 'linkdist' in g_method:
+        A = spnorm(graph.adj())
     evaluate.start_run()
     if g_method in ('mlp', 'mlp-trans'):
         mlp = MLP(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*mlp.parameters()])
         for epoch in range(1, 1 + epochs):
             mlp.train()
-            if g_data == 'ppi':
-                for X, Y, src, dst, n, e, d, c, A in graphs['train']:
-                    for perm in DataLoader(
-                            range(n), batch_size=batch_size, shuffle=True):
-                        opt.zero_grad()
-                        F.binary_cross_entropy_with_logits(
-                            mlp(X[perm]), Y[perm]).backward()
-                        opt.step()
-                with torch.no_grad():
-                    mlp.eval()
-                    rets = []
-                    for mode in modes:
-                        ret = []
-                        for X, Y, src, dst, n, e, d, c, A in graphs[mode]:
-                            ret.append((mlp(X), Y))
-                        rets.append(ret)
-                    evaluate.evppi(rets)
-            else:
-                for perm in DataLoader(
-                        train_idx, batch_size=batch_size, shuffle=True):
-                    opt.zero_grad()
-                    F.cross_entropy(mlp(X[perm]), Y[perm]).backward()
-                    opt.step()
-                with torch.no_grad():
-                    mlp.eval()
-                    evaluate(mlp(X))
+            for perm in DataLoader(
+                    train_idx, batch_size=batch_size, shuffle=True):
+                opt.zero_grad()
+                F.cross_entropy(mlp(X[perm]), Y[perm]).backward()
+                opt.step()
+            with torch.no_grad():
+                mlp.eval()
+                evaluate(mlp(X))
     elif g_method in ('gcn', 'gcn-trans'):
         gcn = GCN(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*gcn.parameters()])
         for epoch in range(1, 1 + epochs):
             gcn.train()
-            if g_data == 'ppi':
-                for X, Y, src, dst, n, e, d, c, A in graphs['train']:
-                    gcn.A = A
-                    opt.zero_grad()
-                    F.binary_cross_entropy_with_logits(gcn(X), Y).backward()
-                    opt.step()
-                with torch.no_grad():
-                    gcn.eval()
-                    rets = []
-                    for mode in modes:
-                        ret = []
-                        for X, Y, src, dst, n, e, d, c, A in graphs[mode]:
-                            gcn.A = A
-                            ret.append((gcn(X), Y))
-                        rets.append(ret)
-                    evaluate.evppi(rets)
-            else:
-                gcn.A = A[0]
-                opt.zero_grad()
-                F.cross_entropy(gcn(X)[train_mask], Y[train_mask]).backward()
-                opt.step()
-                with torch.no_grad():
-                    gcn.eval()
-                    gcn.A = A[1]
-                    evaluate(gcn(X))
+            gcn.A = A[0]
+            opt.zero_grad()
+            F.cross_entropy(gcn(X)[train_mask], Y[train_mask]).backward()
+            opt.step()
+            with torch.no_grad():
+                gcn.eval()
+                gcn.A = A[1]
+                evaluate(gcn(X))
     elif g_method in ('gcn2mlp', 'gcn2mlp-trans'):
         gcn = GCN(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*gcn.parameters()])
@@ -338,144 +260,56 @@ for run in range(10):
         ev2.start_run()
         for epoch in range(1, 1 + epochs):
             gcn.train()
-            if g_data == 'ppi':
-                for X, Y, src, dst, n, e, d, c, A in graphs['train']:
-                    gcn.A = A
-                    opt.zero_grad()
-                    F.binary_cross_entropy_with_logits(gcn(X), Y).backward()
-                    opt.step()
-                with torch.no_grad():
-                    gcn.eval()
-                    rets = []
-                    for mode in modes:
-                        ret = []
-                        for X, Y, src, dst, n, e, d, c, A in graphs[mode]:
-                            gcn.A = A
-                            ret.append((gcn(X), Y))
-                        rets.append(ret)
-                    ev2.evppi(rets)
-                acc = ev2.accs[-1][1]
-                if acc > best_acc:
-                    best_acc = acc
-                    probs = [
-                        [torch.sigmoid(logits) for logits, Y in ret]
-                        for ret in rets]
-            else:
-                opt.zero_grad()
-                gcn.A = A[0]
-                F.cross_entropy(gcn(X)[train_mask], Y[train_mask]).backward()
-                opt.step()
-                with torch.no_grad():
-                    gcn.eval()
-                    gcn.A = A[1]
-                    logits = gcn(X)
-                    ev2(logits)
-                acc = ev2.accs[-1][1]
-                if acc > best_acc:
-                    best_acc = acc
-                    probs = torch.softmax(logits.detach(), dim=-1)
+            opt.zero_grad()
+            gcn.A = A[0]
+            F.cross_entropy(gcn(X)[train_mask], Y[train_mask]).backward()
+            opt.step()
+            with torch.no_grad():
+                gcn.eval()
+                gcn.A = A[1]
+                logits = gcn(X)
+                ev2(logits)
+            acc = ev2.accs[-1][1]
+            if acc > best_acc:
+                best_acc = acc
+                probs = torch.softmax(logits.detach(), dim=-1)
         mlp = MLP(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*mlp.parameters()])
         for epoch in range(1, 1 + epochs):
             mlp.train()
-            if g_data == 'ppi':
-                for (X, Y, src, dst, n, e, d, c, A), prob in zip(
-                        graphs['train'], probs[0]):
-                    for perm in DataLoader(
-                            range(n), batch_size=batch_size, shuffle=True):
-                        opt.zero_grad()
-                        F.binary_cross_entropy_with_logits(
-                            mlp(X[perm]), prob[perm]).backward()
-                        opt.step()
-                with torch.no_grad():
-                    mlp.eval()
-                    rets = []
-                    for mode in modes:
-                        ret = []
-                        for X, Y, src, dst, n, e, d, c, A in graphs[mode]:
-                            ret.append((mlp(X), Y))
-                        rets.append(ret)
-                    evaluate.evppi(rets)
-            else:
-                for perm in DataLoader(
-                        known_idx, batch_size=batch_size, shuffle=True):
-                    opt.zero_grad()
-                    F.kl_div(
-                        F.log_softmax(mlp(X[perm]), dim=-1), probs[perm]
-                    ).backward()
-                    opt.step()
-                with torch.no_grad():
-                    mlp.eval()
-                    evaluate(mlp(X))
+            for perm in DataLoader(
+                    known_idx, batch_size=batch_size, shuffle=True):
+                opt.zero_grad()
+                F.kl_div(
+                    F.log_softmax(mlp(X[perm]), dim=-1), probs[perm]
+                ).backward()
+                opt.step()
+            with torch.no_grad():
+                mlp.eval()
+                evaluate(mlp(X))
     elif 'linkdist' in g_method:
         linkdist = LinkDist(n_features, hid, n_labels, n_layers=n_layers)
         opt = optimize([*linkdist.parameters()])
         if '-trans' in g_method:
             src, dst = graph.edges()
             n_edges = src.shape[0]
-        if g_data == 'ppi':
-            params = []
-            for X, Y, src, dst, n, e, d, c, A in graphs['train']:
-                alpha = 0
-                label_ndist = Y.sum(dim=0)
-                label_edist = (Y[src] + Y[dst]).sum(dim=0)
-                weight = c * F.normalize(
-                    label_ndist / label_edist, p=1, dim=0)
-                params.append((alpha, weight))
-        else:
-            # 点中训练节点比例
-            train_nprob = train_mask.sum().item() / n_nodes
-            # 边中训练节点比例
-            train_eprob = ((
-                train_mask[src].sum() + train_mask[dst].sum()
-            ) / (2 * n_edges)).item()
-            # 边中未知节点比例
-            alpha = 1 - train_eprob
-            label_ndist = Y[
-                torch.arange(n_nodes)[train_mask]].float().histc(n_labels)
-            label_edist = (
-                Y[src[train_mask[src]]].float().histc(n_labels)
-                + Y[dst[train_mask[dst]]].float().histc(n_labels))
-            weight = n_labels * F.normalize(
-                label_ndist / label_edist, p=1, dim=0)
+        # 点中训练节点比例
+        train_nprob = train_mask.sum().item() / n_nodes
+        # 边中训练节点比例
+        train_eprob = ((
+            train_mask[src].sum() + train_mask[dst].sum()
+        ) / (2 * n_edges)).item()
+        # 边中未知节点比例
+        alpha = 1 - train_eprob
+        label_ndist = Y[
+            torch.arange(n_nodes)[train_mask]].float().histc(n_labels)
+        label_edist = (
+            Y[src[train_mask[src]]].float().histc(n_labels)
+            + Y[dst[train_mask[dst]]].float().histc(n_labels))
+        weight = n_labels * F.normalize(
+            label_ndist / label_edist, p=1, dim=0)
         for epoch in range(1, 1 + int(epochs // degree)):
             linkdist.train()
-            if g_data == 'ppi':
-                for (X, Y, src, dst, n, e, d, c, A), (alpha, weight) in zip(
-                        graphs['train'], params):
-                    for perm in DataLoader(
-                            range(e), batch_size=batch_size, shuffle=True):
-                        opt.zero_grad()
-                        psrc = src[perm]
-                        pdst = dst[perm]
-                        y1, z1 = linkdist(X[psrc])
-                        y2, z2 = linkdist(X[pdst])
-                        loss = alpha * (
-                            F.mse_loss(y1, z2) + F.mse_loss(y2, z1)
-                        ) + F.binary_cross_entropy_with_logits(
-                            y1, Y[psrc], weight=weight
-                        ) + F.binary_cross_entropy_with_logits(
-                            z2, Y[psrc], weight=weight
-                        ) + F.binary_cross_entropy_with_logits(
-                            y2, Y[pdst], weight=weight
-                        ) + F.binary_cross_entropy_with_logits(
-                            z1, Y[pdst], weight=weight)
-                        loss.backward()
-                        opt.step()
-                with torch.no_grad():
-                    linkdist.eval()
-                    rets = []
-                    for mode in modes:
-                        ret = []
-                        for X, Y, src, dst, n, e, d, c, A in graphs[mode]:
-                            Z, S = linkdist(X)
-                            if 'mlp' in g_method:
-                                ret.append((Z, Y))
-                            else:
-                                ret.append((Z + alpha * (A @ S), Y))
-                        rets.append(ret)
-                    evaluate.evppi(rets)
-                continue
             if g_method.startswith('colinkdist'):
                 if g_split:
                     beta = 0.1
@@ -484,6 +318,8 @@ for run in range(10):
                 else:
                     beta1 = train_nprob
                     beta2 = train_eprob
+                # idx = torch.arange(n_nodes)[train_mask][
+                #     torch.randint(0, train_mask.sum().item(), (n_edges, ))]
                 idx = torch.randint(0, n_nodes, (n_edges, ))
                 smax = lambda x: torch.softmax(x, dim=-1)
                 for perm in DataLoader(
