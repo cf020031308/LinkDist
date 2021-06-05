@@ -2,6 +2,7 @@ import sys
 import time
 from collections import defaultdict
 
+import numpy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -208,7 +209,12 @@ evaluate = Stat(
 for run in range(10):
     torch.manual_seed(run)
     if g_data != 'ppi':
-        if g_split:
+        if g_split == 6 and '-full' in g_method:
+            split = numpy.load('data/%s_split_0.6_0.2_%d.npz' % (g_data, run))
+            train_mask = torch.from_numpy(split['train_mask']).bool()
+            valid_mask = torch.from_numpy(split['val_mask']).bool()
+            test_mask = torch.from_numpy(split['test_mask']).bool()
+        elif g_split:
             train_mask = torch.zeros(n_nodes, dtype=bool)
             valid_mask = torch.zeros(n_nodes, dtype=bool)
             test_mask = torch.zeros(n_nodes, dtype=bool)
