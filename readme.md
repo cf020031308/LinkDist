@@ -2,9 +2,11 @@
 
 *LinkDist* distils self-knowledge from links into a Multi-Layer Perceptron (MLP) without the need to aggregate messages.
 
-Experiments with 8 real-world datasets show the Learnt MLP (named *LinkDistMLP*) can predict the label of a node without knowing its adjacencies but achieve comparable accuracy against GNNs in the context of semi-supervised node classification.
+Experiments with 8 real-world datasets show the Learnt MLP (named *LinkDistMLP*) can predict the label of a node without knowing its adjacencies but achieve comparable accuracy against GNNs in the contexts of both semi- and full-supervised node classification tasks.
 
 We also introduce Contrastive Learning techniques to further boost the accuracy of LinkDist and LinkDistMLP (as *CoLinkDist* and *CoLinkDistMLP*).
+
+[中文概要](https://cf020031308.github.io/papers/2021-distilling-self-knowledge-from-contrastive-links-to-classify-graph-nodes-without-passing-messages/)
 
 ![Distilling Self-Knowledge From Links](arch.png)
 
