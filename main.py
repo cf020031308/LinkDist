@@ -293,24 +293,26 @@ for run in range(10):
         if '-trans' in g_method:
             src, dst = graph.edges()
             n_edges = src.shape[0]
-        # 点中训练节点比例
+        # Ratio of known labels in nodes
         train_nprob = train_mask.sum().item() / n_nodes
-        # 边中训练节点比例
+        # Ratio of known labels in edges
         train_eprob = ((
             train_mask[src].sum() + train_mask[dst].sum()
         ) / (2 * n_edges)).item()
-        # 边中未知节点比例
+        # Hyperparameter alpha
         alpha = 1 - train_eprob
         label_ndist = Y[
             torch.arange(n_nodes)[train_mask]].float().histc(n_labels)
         label_edist = (
             Y[src[train_mask[src]]].float().histc(n_labels)
             + Y[dst[train_mask[dst]]].float().histc(n_labels))
+        # label_edist = label_edist + 1
         weight = n_labels * F.normalize(
             label_ndist / label_edist, p=1, dim=0)
         for epoch in range(1, 1 + int(epochs // degree)):
             linkdist.train()
             if g_method.startswith('colinkdist'):
+                # Hyperparameter beta
                 if g_split:
                     beta = 0.1
                     beta1 = beta * train_nprob / (train_nprob + train_eprob)
@@ -318,8 +320,6 @@ for run in range(10):
                 else:
                     beta1 = train_nprob
                     beta2 = train_eprob
-                # idx = torch.arange(n_nodes)[train_mask][
-                #     torch.randint(0, train_mask.sum().item(), (n_edges, ))]
                 idx = torch.randint(0, n_nodes, (n_edges, ))
                 smax = lambda x: torch.softmax(x, dim=-1)
                 for perm in DataLoader(
