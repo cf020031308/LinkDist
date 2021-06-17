@@ -10,7 +10,7 @@ We also introduce Contrastive Learning techniques to further boost the accuracy 
 
 ![Contrastive Training With Negative Links](neg.png)
 
-## State-of-the-Art
+## State of the Art
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/distilling-self-knowledge-from-contrastive/node-classification-on-cora)](https://paperswithcode.com/sota/node-classification-on-cora?p=distilling-self-knowledge-from-contrastive)
 
@@ -35,6 +35,12 @@ We also introduce Contrastive Learning techniques to further boost the accuracy 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/distilling-self-knowledge-from-contrastive/node-classification-on-pubmed-with-public)](https://paperswithcode.com/sota/node-classification-on-pubmed-with-public?p=distilling-self-knowledge-from-contrastive)
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/distilling-self-knowledge-from-contrastive/node-classification-on-cora-full-with-public)](https://paperswithcode.com/sota/node-classification-on-cora-full-with-public?p=distilling-self-knowledge-from-contrastive)
+
+| MLP-based Method | [ogbn-arxiv](https://ogb.stanford.edu/docs/leader_nodeprop/#ogbn-arxiv) | [ogbn-mag](https://ogb.stanford.edu/docs/leader_nodeprop/#ogbn-mag) | [ogbn-products](https://ogb.stanford.edu/docs/leader_nodeprop/#ogbn-products) |
+|------------------------------------------------|---------------------|---------------------|---------------------|
+| MLP                                            | 0.5550 ± 0.0023     | 0.2692 ± 0.0026     | 0.6106 ± 0.0008     |
+| MLP + [FLAG](https://github.com/devnkong/FLAG) | 0.5602 ± 0.0019     | -                   | 0.6241 ± 0.0016     |
+| CoLinkDistMLP                                  | **0.5638 ± 0.0016** | **0.2761 ± 0.0018** | **0.6259 ± 0.0010** |
 
 ## Requirements
 
